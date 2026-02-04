@@ -39,7 +39,7 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var copyErrorButton: Button
     private var lastError: String = ""
 
-    private val prootExecutor by lazy { OllamaApp.instance.prootExecutor }
+    private val termuxBootstrap by lazy { OllamaApp.instance.termuxBootstrap }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -227,7 +227,7 @@ class OnboardingActivity : AppCompatActivity() {
 
     private fun startInstallation() {
         titleText.text = "Setting Up"
-        subtitleText.text = "This will download ~60MB"
+        subtitleText.text = "This will download ~100MB"
         statusText.text = "Preparing..."
         progressBar.visibility = View.VISIBLE
         progressBar.progress = 0
@@ -240,28 +240,28 @@ class OnboardingActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                // Step 1: Setup proot environment
-                val prootSuccess = prootExecutor.setup { progress, status ->
+                // Step 1: Setup Termux environment
+                val setupSuccess = termuxBootstrap.setup { progress, status ->
                     runOnUiThread {
-                        // Scale proot setup to 0-50%
-                        val scaledProgress = (progress * 0.5).toInt()
+                        // Scale setup to 0-60%
+                        val scaledProgress = (progress * 0.6).toInt()
                         progressBar.progress = scaledProgress
                         progressText.text = "$scaledProgress%"
                         statusText.text = status
                     }
                 }
 
-                if (!prootSuccess) {
-                    val error = prootExecutor.lastError.ifEmpty { "Unknown error" }
+                if (!setupSuccess) {
+                    val error = termuxBootstrap.lastError.ifEmpty { "Unknown error" }
                     showError("Setup failed: $error")
                     return@launch
                 }
 
                 // Step 2: Install Ollama
-                val ollamaSuccess = prootExecutor.installOllama { progress, status ->
+                val ollamaSuccess = termuxBootstrap.installOllama { progress, status ->
                     runOnUiThread {
-                        // Scale ollama install to 50-100%
-                        val scaledProgress = 50 + (progress * 0.5).toInt()
+                        // Scale ollama install to 60-100%
+                        val scaledProgress = 60 + (progress * 0.4).toInt()
                         progressBar.progress = scaledProgress
                         progressText.text = "$scaledProgress%"
                         statusText.text = status
@@ -269,7 +269,8 @@ class OnboardingActivity : AppCompatActivity() {
                 }
 
                 if (!ollamaSuccess) {
-                    showError("Failed to install Ollama")
+                    val error = termuxBootstrap.lastError.ifEmpty { "Failed to install Ollama" }
+                    showError(error)
                     return@launch
                 }
 
@@ -289,7 +290,7 @@ class OnboardingActivity : AppCompatActivity() {
     private fun showComplete() {
         titleText.text = "Ready to Go!"
         subtitleText.text = "Ollama is installed"
-        statusText.text = "✓ Linux environment ready\n✓ Ollama installed\n\nYou can now run AI models locally!"
+        statusText.text = "✓ Termux environment ready\n✓ Ollama installed\n\nYou can now run AI models locally!"
         progressBar.visibility = View.GONE
         progressText.visibility = View.GONE
         actionButton.text = "Start Chatting"

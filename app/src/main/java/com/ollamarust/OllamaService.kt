@@ -60,23 +60,23 @@ class OllamaService : Service() {
                     return@launch
                 }
 
-                val proot = OllamaApp.instance.prootExecutor
+                val termux = OllamaApp.instance.termuxBootstrap
 
-                // Check if proot environment is ready
-                if (!proot.isSetup()) {
+                // Check if environment is ready
+                if (!termux.isSetup()) {
                     updateNotification("Not set up - run setup first")
                     return@launch
                 }
 
-                if (!proot.isOllamaInstalled()) {
+                if (!termux.isOllamaInstalled()) {
                     updateNotification("Ollama not installed")
                     return@launch
                 }
 
                 updateNotification("Starting Ollama...")
 
-                // Start ollama via proot
-                ollamaProcess = proot.startOllamaServe()
+                // Start ollama
+                ollamaProcess = termux.startOllamaServe()
 
                 if (ollamaProcess != null) {
                     // Wait for server to be ready
@@ -91,7 +91,9 @@ class OllamaService : Service() {
                         // Check if process died
                         try {
                             val exitCode = ollamaProcess?.exitValue()
-                            updateNotification("Process exited: $exitCode")
+                            val output = termux.lastOutput.take(100)
+                            Log.e("OllamaService", "Process exited $exitCode: $output")
+                            updateNotification("Exit $exitCode: ${output.take(40)}")
                             return@launch
                         } catch (e: IllegalThreadStateException) {
                             // Still running, continue
@@ -100,11 +102,9 @@ class OllamaService : Service() {
                     }
                     updateNotification("Timeout waiting for server")
                 } else {
-                    // Test proot to get detailed error
-                    val testResult = proot.testProot()
-                    Log.e("OllamaService", "Proot test: $testResult")
-                    val code = proot.errorCode.ifEmpty { "E5" }
-                    updateNotification("Error $code")
+                    val error = termux.lastError.ifEmpty { "Unknown error" }
+                    Log.e("OllamaService", "Failed to start: $error")
+                    updateNotification("Error: ${error.take(30)}")
                 }
             } catch (e: Exception) {
                 updateNotification("Error: ${e.message?.take(30)}")

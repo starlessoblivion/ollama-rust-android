@@ -30,6 +30,7 @@ class OllamaApp : Application() {
     val ollamaRunner: OllamaRunner by lazy { OllamaRunner(this) }
     val ollamaInstaller: OllamaInstaller by lazy { OllamaInstaller(this) }
     val prootExecutor: ProotExecutor by lazy { ProotExecutor(this) }
+    val termuxBootstrap: TermuxBootstrap by lazy { TermuxBootstrap(this) }
 
     val prefs: SharedPreferences by lazy {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

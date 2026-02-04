@@ -384,6 +384,8 @@ class ProotExecutor(private val context: Context) {
         private set
     var errorCode: String = ""
         private set
+    var lastProcessOutput: String = ""
+        private set
 
     fun testProot(): String {
         return try {
@@ -468,11 +470,20 @@ class ProotExecutor(private val context: Context) {
 
             val process = Runtime.getRuntime().exec(prootCommand.toTypedArray(), env, rootfsDir)
 
-            // Read any immediate errors
+            // Read any immediate errors and capture output
+            lastProcessOutput = ""
+            val outputBuilder = StringBuilder()
+
             Thread {
                 try {
                     process.errorStream.bufferedReader().forEachLine { line ->
                         Log.e(TAG, "Proot stderr: $line")
+                        synchronized(outputBuilder) {
+                            if (outputBuilder.length < 500) {
+                                outputBuilder.append(line).append("\n")
+                            }
+                        }
+                        lastProcessOutput = outputBuilder.toString()
                     }
                 } catch (e: Exception) {
                     // Ignore
@@ -483,6 +494,12 @@ class ProotExecutor(private val context: Context) {
                 try {
                     process.inputStream.bufferedReader().forEachLine { line ->
                         Log.d(TAG, "Proot stdout: $line")
+                        synchronized(outputBuilder) {
+                            if (outputBuilder.length < 500) {
+                                outputBuilder.append(line).append("\n")
+                            }
+                        }
+                        lastProcessOutput = outputBuilder.toString()
                     }
                 } catch (e: Exception) {
                     // Ignore
