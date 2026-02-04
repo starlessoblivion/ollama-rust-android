@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -34,6 +35,9 @@ class OnboardingActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Enable edge-to-edge display
+        WindowCompat.setDecorFitsSystemWindows(window, false)
 
         // Check if already set up
         if (OllamaApp.instance.isSetupComplete()) {
@@ -163,6 +167,9 @@ class OnboardingActivity : AppCompatActivity() {
         container.addView(skipButton)
 
         setContentView(container)
+
+        // Request insets to be applied
+        ViewCompat.requestApplyInsets(container)
     }
 
     private fun requestPermissions() {
