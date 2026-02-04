@@ -13,7 +13,7 @@ class BootReceiver : BroadcastReceiver() {
             val prefs = context.getSharedPreferences(OllamaApp.PREFS_NAME, Context.MODE_PRIVATE)
             val autoStart = prefs.getBoolean("auto_start_ollama", false)
 
-            if (autoStart && OllamaApp.instance.isTermuxSetupComplete()) {
+            if (autoStart && OllamaApp.instance.isSetupComplete()) {
                 val serviceIntent = Intent(context, OllamaService::class.java).apply {
                     action = OllamaService.ACTION_START
                 }

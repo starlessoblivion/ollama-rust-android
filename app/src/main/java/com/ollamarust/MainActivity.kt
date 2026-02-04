@@ -2,6 +2,7 @@ package com.ollamarust
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.webkit.JavascriptInterface
@@ -13,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -39,12 +41,15 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Check if setup is complete
-        if (!OllamaApp.instance.isTermuxSetupComplete()) {
-            startActivity(Intent(this, SetupActivity::class.java))
+        // Check if setup is complete - use new onboarding
+        if (!OllamaApp.instance.isSetupComplete()) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
             finish()
             return
         }
+
+        // Start Ollama service automatically
+        startOllamaService()
 
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
@@ -165,13 +170,22 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun startOllama() {
-            // Launch Termux with ollama serve command
-            TermuxHelper.startOllama(this@MainActivity)
+            startOllamaService()
         }
 
         @JavascriptInterface
         fun stopOllama() {
-            TermuxHelper.stopOllama(this@MainActivity)
+            stopOllamaService()
+        }
+
+        @JavascriptInterface
+        fun isOllamaInstalled(): Boolean {
+            return OllamaApp.instance.ollamaInstaller.isInstalled()
+        }
+
+        @JavascriptInterface
+        fun isUsingRemoteServer(): Boolean {
+            return OllamaApp.instance.isUsingRemoteServer()
         }
 
         @JavascriptInterface
@@ -414,6 +428,24 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun startOllamaService() {
+        val intent = Intent(this, OllamaService::class.java).apply {
+            action = OllamaService.ACTION_START
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private fun stopOllamaService() {
+        val intent = Intent(this, OllamaService::class.java).apply {
+            action = OllamaService.ACTION_STOP
+        }
+        startService(intent)
     }
 
     override fun onBackPressed() {
