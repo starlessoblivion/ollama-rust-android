@@ -2,6 +2,7 @@ package com.ollamarust
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.webkit.JavascriptInterface
@@ -10,7 +11,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +32,8 @@ import java.util.concurrent.TimeUnit
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private var safeAreaTop = 0
+    private var safeAreaBottom = 0
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -48,8 +53,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Start Ollama service automatically
-        startOllamaService()
+        // Don't auto-start - let user toggle it manually
+        // startOllamaService()
 
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
@@ -58,15 +63,27 @@ class MainActivity : AppCompatActivity() {
             settings.allowContentAccess = true
             settings.databaseEnabled = true
             settings.setSupportZoom(false)
+            // Set background color for the padded areas (status bar region)
+            setBackgroundColor(0xFF1e3a5f.toInt())
 
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val url = request?.url?.toString() ?: return false
+                    // Open external links in browser
+                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                        if (!url.startsWith("file://")) {
+                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                            startActivity(intent)
+                            return true
+                        }
+                    }
                     return false
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    // Inject saved preferences
+                    // Inject safe area and saved preferences
+                    injectSafeArea()
                     injectSavedPreferences()
                 }
             }
@@ -76,10 +93,16 @@ class MainActivity : AppCompatActivity() {
             addJavascriptInterface(OllamaInterface(), "Android")
         }
 
-        setContentView(webView)
+        // Wrap WebView in a container with top margin for status bar
+        val container = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xFF1e3a5f.toInt())
+        }
+        container.addView(webView)
+        setContentView(container)
 
-        // Enable edge-to-edge display for proper safe area handling
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Let system handle status bar normally (no edge-to-edge)
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        window.statusBarColor = 0xFF1e3a5f.toInt()
 
         webView.loadUrl("file:///android_asset/index.html")
     }
@@ -101,6 +124,15 @@ class MainActivity : AppCompatActivity() {
                         webSearchEnabled: $searchEnabled
                     });
                 }
+            })();
+        """.trimIndent(), null)
+    }
+
+    private fun injectSafeArea() {
+        webView.evaluateJavascript("""
+            (function() {
+                document.documentElement.style.setProperty('--safe-area-top', '${safeAreaTop}px');
+                document.documentElement.style.setProperty('--safe-area-bottom', '${safeAreaBottom}px');
             })();
         """.trimIndent(), null)
     }
@@ -201,7 +233,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun openSettings() {
-            startActivity(Intent(this@MainActivity, SetupActivity::class.java))
+            startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
         }
     }
 

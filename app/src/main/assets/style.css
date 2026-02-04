@@ -223,6 +223,8 @@
     --header-h: 56px;
     --input-h: 60px;
     --btn-size: 44px;
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ===== BASE STYLES ===== */
@@ -273,7 +275,6 @@ body {
     background-color: var(--bg-header);
     color: var(--text-header);
     padding: 0.5rem 0.75rem;
-    padding-top: max(0.5rem, env(safe-area-inset-top));
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
@@ -311,7 +312,6 @@ body {
     background: var(--bg-input);
     gap: 0.5rem;
     min-height: var(--input-h);
-    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
 
 .chat-input-area textarea {

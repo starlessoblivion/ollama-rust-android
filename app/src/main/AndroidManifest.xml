@@ -42,6 +42,11 @@
             android:exported="false"
             android:theme="@style/Theme.OllamaRust" />
 
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.OllamaRust" />
+
         <service
             android:name=".OllamaService"
             android:exported="false"

@@ -3,6 +3,7 @@ package com.ollamarust
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -38,6 +39,10 @@ class OnboardingActivity : AppCompatActivity() {
 
         // Enable edge-to-edge display
         WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        // Make status bar transparent
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
 
         // Check if already set up
         if (OllamaApp.instance.isSetupComplete()) {

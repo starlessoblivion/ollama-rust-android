@@ -70,8 +70,9 @@ class ProotExecutor(private val context: Context) {
     private val baseDir: File
         get() = File(context.filesDir, "proot")
 
+    // Use bundled proot from native libs (has exec permission)
     private val prootBinary: File
-        get() = File(baseDir, "proot")
+        get() = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
 
     private val rootfsDir: File
         get() = File(baseDir, "rootfs")
@@ -126,17 +127,13 @@ class ProotExecutor(private val context: Context) {
                 tmpDir.mkdirs()
                 rootfsDir.mkdirs()
 
-                // Download proot if needed
+                // Proot is now bundled in the APK as a native library
+                // Verify it exists
                 if (!prootBinary.exists()) {
-                    onProgress(5, "Downloading proot...")
-                    downloadFile(getProotUrl(), prootBinary) { progress ->
-                        val speedInfo = if (progress.currentSpeedBps > 0) {
-                            " (${progress.currentSpeedFormatted})"
-                        } else ""
-                        onProgress(5 + (progress.percent * 0.15).toInt(), "Downloading proot...$speedInfo")
-                    }
-                    prootBinary.setExecutable(true, false)
+                    Log.e(TAG, "Bundled proot not found at: ${prootBinary.absolutePath}")
+                    return@withContext false
                 }
+                Log.d(TAG, "Using bundled proot: ${prootBinary.absolutePath}, size: ${prootBinary.length()}")
 
                 // Download and extract rootfs if needed
                 if (!File(rootfsDir, "bin/sh").exists()) {
@@ -294,8 +291,65 @@ class ProotExecutor(private val context: Context) {
         }
     }
 
-    fun startOllamaServe(): Process? {
+    // Error codes: E1=proot missing, E2=ollama missing, E3=rootfs missing, E4=exec failed, E5=unknown
+    var lastError: String = ""
+        private set
+    var errorCode: String = ""
+        private set
+
+    fun testProot(): String {
         return try {
+            if (!prootBinary.exists()) {
+                return "Proot not found at ${prootBinary.absolutePath}"
+            }
+            if (!prootBinary.canExecute()) {
+                prootBinary.setExecutable(true, false)
+            }
+
+            val process = ProcessBuilder(prootBinary.absolutePath, "--version")
+                .redirectErrorStream(true)
+                .start()
+
+            val output = process.inputStream.bufferedReader().readText()
+            val exitCode = process.waitFor()
+
+            "Exit: $exitCode, Output: $output"
+        } catch (e: Exception) {
+            "Error: ${e.javaClass.simpleName}: ${e.message}"
+        }
+    }
+
+    fun startOllamaServe(): Process? {
+        lastError = ""
+        errorCode = ""
+        return try {
+            // Verify files exist first
+            if (!prootBinary.exists()) {
+                errorCode = "E1"
+                lastError = "Proot not found"
+                Log.e(TAG, "Proot binary not found at: ${prootBinary.absolutePath}")
+                return null
+            }
+            if (!prootBinary.canExecute()) {
+                Log.e(TAG, "Proot binary not executable, setting permission")
+                prootBinary.setExecutable(true, false)
+            }
+            if (!ollamaBinary.exists()) {
+                errorCode = "E2"
+                lastError = "Ollama not found"
+                Log.e(TAG, "Ollama binary not found at: ${ollamaBinary.absolutePath}")
+                return null
+            }
+            if (!File(rootfsDir, "bin/sh").exists()) {
+                errorCode = "E3"
+                lastError = "Rootfs not found"
+                Log.e(TAG, "Rootfs bin/sh not found")
+                return null
+            }
+
+            // Ensure tmp dir exists
+            tmpDir.mkdirs()
+
             val prootCommand = listOf(
                 prootBinary.absolutePath,
                 "-0",
@@ -316,9 +370,39 @@ class ProotExecutor(private val context: Context) {
             )
 
             Log.d(TAG, "Starting ollama serve via proot")
-            Runtime.getRuntime().exec(prootCommand.toTypedArray(), env, rootfsDir)
+            Log.d(TAG, "Command: ${prootCommand.joinToString(" ")}")
+            Log.d(TAG, "Proot exists: ${prootBinary.exists()}, executable: ${prootBinary.canExecute()}")
+            Log.d(TAG, "Ollama exists: ${ollamaBinary.exists()}")
+            Log.d(TAG, "Rootfs exists: ${rootfsDir.exists()}, bin/sh: ${File(rootfsDir, "bin/sh").exists()}")
+
+            val process = Runtime.getRuntime().exec(prootCommand.toTypedArray(), env, rootfsDir)
+
+            // Read any immediate errors
+            Thread {
+                try {
+                    process.errorStream.bufferedReader().forEachLine { line ->
+                        Log.e(TAG, "Proot stderr: $line")
+                    }
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }.start()
+
+            Thread {
+                try {
+                    process.inputStream.bufferedReader().forEachLine { line ->
+                        Log.d(TAG, "Proot stdout: $line")
+                    }
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }.start()
+
+            process
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start ollama", e)
+            errorCode = "E4"
+            lastError = e.message?.take(30) ?: "Exec failed"
+            Log.e(TAG, "Failed to start ollama: ${e.message}", e)
             null
         }
     }

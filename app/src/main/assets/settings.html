@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Settings</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .settings-container {
+            min-height: 100vh;
+            background: var(--bg-page);
+            color: var(--text-primary);
+        }
+        .settings-header {
+            background: var(--bg-header);
+            color: var(--text-header);
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .back-btn {
+            background: none;
+            border: none;
+            color: var(--text-header);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+        }
+        .settings-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        .settings-content {
+            padding: 1rem;
+        }
+        .settings-section {
+            background: var(--bg-container);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+        .section-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            padding: 1rem 1rem 0.5rem;
+            letter-spacing: 0.5px;
+        }
+        .settings-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .settings-item:last-child {
+            border-bottom: none;
+        }
+        .settings-item-label {
+            font-size: 1rem;
+        }
+        .settings-item-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 0.75rem;
+            padding: 1rem;
+        }
+        .theme-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-menu);
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .theme-btn.active {
+            border-color: var(--accent);
+        }
+        .theme-preview {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+        }
+        .theme-preview.light { background: linear-gradient(135deg, #fff 50%, #e5e5e5 50%); }
+        .theme-preview.dark { background: linear-gradient(135deg, #2d2d2d 50%, #1a1a1a 50%); }
+        .theme-preview.amoled { background: #000; }
+        .theme-preview.hacker { background: #0a0a0a; border-color: #00ff00; }
+        .theme-preview.nordic { background: linear-gradient(135deg, #5e81ac 50%, #3b4252 50%); }
+        .theme-name {
+            font-size: 0.8rem;
+            color: var(--text-primary);
+        }
+        .api-input-group {
+            padding: 0 1rem 1rem;
+        }
+        .api-input {
+            width: 100%;
+            padding: 0.75rem;
+            font-size: 1rem;
+            border: 1px solid var(--border-input);
+            border-radius: 8px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-family: inherit;
+        }
+        .api-input:focus {
+            outline: 2px solid var(--accent);
+            border-color: var(--accent);
+        }
+        .api-btn-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+        .api-btn {
+            flex: 1;
+            padding: 0.6rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .api-btn.primary {
+            background: var(--accent);
+            color: white;
+        }
+        .api-btn.secondary {
+            background: var(--bg-menu-hover);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+        .api-status {
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .api-status.success {
+            background: rgba(46, 204, 113, 0.15);
+            color: #27ae60;
+        }
+        .api-status.error {
+            background: rgba(231, 76, 60, 0.15);
+            color: #e74c3c;
+        }
+        .danger-section .settings-item {
+            color: var(--error);
+        }
+        .danger-btn {
+            background: var(--error);
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .version-info {
+            text-align: center;
+            padding: 2rem 1rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body data-theme="dark">
+    <div class="settings-container">
+        <header class="settings-header">
+            <button class="back-btn" onclick="Android.goBack()">←</button>
+            <span class="settings-title">Settings</span>
+        </header>
+
+        <div class="settings-content">
+            <!-- Theme Section -->
+            <div class="settings-section">
+                <div class="section-title">Theme</div>
+                <div class="theme-grid" id="theme-grid">
+                    <button class="theme-btn" data-theme="light">
+                        <div class="theme-preview light"></div>
+                        <span class="theme-name">Light</span>
+                    </button>
+                    <button class="theme-btn" data-theme="dark">
+                        <div class="theme-preview dark"></div>
+                        <span class="theme-name">Dark</span>
+                    </button>
+                    <button class="theme-btn" data-theme="amoled">
+                        <div class="theme-preview amoled"></div>
+                        <span class="theme-name">AMOLED</span>
+                    </button>
+                    <button class="theme-btn" data-theme="hacker">
+                        <div class="theme-preview hacker"></div>
+                        <span class="theme-name">Hacker</span>
+                    </button>
+                    <button class="theme-btn" data-theme="nordic">
+                        <div class="theme-preview nordic"></div>
+                        <span class="theme-name">Nordic</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Brave Search API Section -->
+            <div class="settings-section">
+                <div class="section-title">Web Search</div>
+                <div class="settings-item">
+                    <div>
+                        <div class="settings-item-label">Brave Search API</div>
+                        <div class="settings-item-desc">Enable AI to search the web</div>
+                    </div>
+                </div>
+                <div class="api-input-group">
+                    <input type="password" class="api-input" id="brave-api-key" placeholder="Enter Brave API Key">
+                    <div class="api-btn-row">
+                        <button class="api-btn primary" id="save-api-btn">Save</button>
+                        <button class="api-btn secondary" id="test-api-btn">Test</button>
+                    </div>
+                    <div class="api-status hidden" id="api-status"></div>
+                    <div style="margin-top: 0.75rem;">
+                        <a href="https://brave.com/search/api/" style="color: var(--link); font-size: 0.85rem;">Get a free API key →</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="settings-section danger-section">
+                <div class="section-title">Danger Zone</div>
+                <div class="settings-item">
+                    <div>
+                        <div class="settings-item-label">Reset App</div>
+                        <div class="settings-item-desc">Clear all data and run setup again</div>
+                    </div>
+                    <button class="danger-btn" id="reset-btn">Reset</button>
+                </div>
+            </div>
+
+            <div class="version-info">
+                Ollama Android v1.0.0
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load saved theme
+        const savedTheme = Android.getTheme();
+        document.body.setAttribute('data-theme', savedTheme);
+
+        // Mark active theme
+        document.querySelectorAll('.theme-btn').forEach(btn => {
+            if (btn.dataset.theme === savedTheme) {
+                btn.classList.add('active');
+            }
+            btn.addEventListener('click', () => {
+                const theme = btn.dataset.theme;
+                document.body.setAttribute('data-theme', theme);
+                document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                Android.setTheme(theme);
+            });
+        });
+
+        // Load saved API key
+        const savedKey = Android.getBraveApiKey();
+        if (savedKey) {
+            document.getElementById('brave-api-key').value = savedKey;
+        }
+
+        // Save API key
+        document.getElementById('save-api-btn').addEventListener('click', () => {
+            const key = document.getElementById('brave-api-key').value;
+            Android.setBraveApiKey(key);
+            showStatus('Saved!', 'success');
+        });
+
+        // Test API key
+        document.getElementById('test-api-btn').addEventListener('click', () => {
+            const key = document.getElementById('brave-api-key').value;
+            if (!key) {
+                showStatus('Enter an API key first', 'error');
+                return;
+            }
+            document.getElementById('test-api-btn').disabled = true;
+            document.getElementById('test-api-btn').textContent = 'Testing...';
+            Android.testBraveApi(key);
+        });
+
+        // Reset button
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if (confirm('This will delete all app data including downloaded models. Continue?')) {
+                Android.resetApp();
+            }
+        });
+
+        function showStatus(message, type) {
+            const status = document.getElementById('api-status');
+            status.textContent = message;
+            status.className = 'api-status ' + type;
+        }
+
+        window.onBraveTestResult = function(success) {
+            document.getElementById('test-api-btn').disabled = false;
+            document.getElementById('test-api-btn').textContent = 'Test';
+            if (success) {
+                showStatus('API key is valid!', 'success');
+            } else {
+                showStatus('Invalid API key', 'error');
+            }
+        };
+    </script>
+</body>
+</html>

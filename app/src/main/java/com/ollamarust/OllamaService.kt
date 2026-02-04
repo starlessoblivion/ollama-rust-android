@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,44 +53,61 @@ class OllamaService : Service() {
 
     private fun startOllama() {
         serviceScope.launch {
-            // Check if using remote server
-            if (OllamaApp.instance.isUsingRemoteServer()) {
-                updateNotification("Using remote server")
-                return@launch
-            }
-
-            val proot = OllamaApp.instance.prootExecutor
-
-            // Check if proot environment is ready
-            if (!proot.isSetup()) {
-                updateNotification("Not set up - run setup first")
-                return@launch
-            }
-
-            if (!proot.isOllamaInstalled()) {
-                updateNotification("Ollama not installed")
-                return@launch
-            }
-
-            updateNotification("Starting Ollama...")
-
-            // Start ollama via proot
-            ollamaProcess = proot.startOllamaServe()
-
-            if (ollamaProcess != null) {
-                // Wait for server to be ready
-                var attempts = 0
-                while (attempts < 30) {
-                    kotlinx.coroutines.delay(1000)
-                    if (OllamaApp.instance.ollamaRunner.checkServerRunning()) {
-                        updateNotification("Running")
-                        return@launch
-                    }
-                    attempts++
+            try {
+                // Check if using remote server
+                if (OllamaApp.instance.isUsingRemoteServer()) {
+                    updateNotification("Using remote server")
+                    return@launch
                 }
-                updateNotification("Starting...")
-            } else {
-                updateNotification("Failed to start")
+
+                val proot = OllamaApp.instance.prootExecutor
+
+                // Check if proot environment is ready
+                if (!proot.isSetup()) {
+                    updateNotification("Not set up - run setup first")
+                    return@launch
+                }
+
+                if (!proot.isOllamaInstalled()) {
+                    updateNotification("Ollama not installed")
+                    return@launch
+                }
+
+                updateNotification("Starting Ollama...")
+
+                // Start ollama via proot
+                ollamaProcess = proot.startOllamaServe()
+
+                if (ollamaProcess != null) {
+                    // Wait for server to be ready
+                    var attempts = 0
+                    while (attempts < 60) {
+                        kotlinx.coroutines.delay(1000)
+                        updateNotification("Starting... (${attempts}s)")
+                        if (OllamaApp.instance.ollamaRunner.checkServerRunning()) {
+                            updateNotification("Running")
+                            return@launch
+                        }
+                        // Check if process died
+                        try {
+                            val exitCode = ollamaProcess?.exitValue()
+                            updateNotification("Process exited: $exitCode")
+                            return@launch
+                        } catch (e: IllegalThreadStateException) {
+                            // Still running, continue
+                        }
+                        attempts++
+                    }
+                    updateNotification("Timeout waiting for server")
+                } else {
+                    // Test proot to get detailed error
+                    val testResult = proot.testProot()
+                    Log.e("OllamaService", "Proot test: $testResult")
+                    val code = proot.errorCode.ifEmpty { "E5" }
+                    updateNotification("Error $code")
+                }
+            } catch (e: Exception) {
+                updateNotification("Error: ${e.message?.take(30)}")
             }
         }
     }

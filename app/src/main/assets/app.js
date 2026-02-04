@@ -20,12 +20,7 @@ const statusMenu = document.getElementById('status-menu');
 const statusDot = document.getElementById('status-dot');
 const ollamaToggle = document.getElementById('ollama-toggle');
 const braveToggle = document.getElementById('brave-toggle');
-const braveSubmenu = document.getElementById('brave-submenu');
-const braveSearchItem = document.getElementById('brave-search-item');
-const braveToken = document.getElementById('brave-token');
-const braveSaveBtn = document.getElementById('brave-save-btn');
-const braveTestBtn = document.getElementById('brave-test-btn');
-const braveStatus = document.getElementById('brave-status');
+const settingsBtn = document.getElementById('settings-btn');
 const menuBackdrop = document.getElementById('menu-backdrop');
 const addModelTrigger = document.getElementById('add-model-trigger');
 const addModelRow = document.getElementById('add-model-row');
@@ -54,7 +49,6 @@ window.loadPreferences = function(prefs) {
     }
     if (prefs.braveApiKey) {
         braveApiKey = prefs.braveApiKey;
-        braveToken.value = prefs.braveApiKey;
     }
     if (prefs.webSearchEnabled) {
         webSearchEnabled = prefs.webSearchEnabled;
@@ -124,34 +118,10 @@ function setupEventListeners() {
         updateStatusDot();
     });
 
-    // Brave submenu hover
-    braveSearchItem.addEventListener('mouseenter', () => {
-        braveSubmenu.classList.remove('hidden');
-    });
-
-    braveSearchItem.addEventListener('mouseleave', (e) => {
-        if (!braveSubmenu.contains(e.relatedTarget)) {
-            braveSubmenu.classList.add('hidden');
-        }
-    });
-
-    braveSubmenu.addEventListener('mouseleave', (e) => {
-        if (!braveSearchItem.contains(e.relatedTarget)) {
-            braveSubmenu.classList.add('hidden');
-        }
-    });
-
-    // Brave API buttons
-    braveSaveBtn.addEventListener('click', saveBraveToken);
-    braveTestBtn.addEventListener('click', testBraveToken);
-
-    // Theme options
-    document.querySelectorAll('.theme-option').forEach(option => {
-        option.addEventListener('click', () => {
-            const theme = option.dataset.theme;
-            setTheme(theme);
-            Android.savePreference('theme', theme);
-        });
+    // Settings button
+    settingsBtn.addEventListener('click', () => {
+        closeAllMenus();
+        Android.openSettings();
     });
 
     // Add model
@@ -371,44 +341,6 @@ window.onPullError = function(error) {
     pullStatus.textContent = 'Error: ' + error;
     pullModelBtn.disabled = false;
 };
-
-function saveBraveToken() {
-    braveApiKey = braveToken.value.trim();
-    Android.savePreference('brave_api_key', braveApiKey);
-    showBraveStatus('Token saved!', 'success');
-    updateStatusDot();
-}
-
-function testBraveToken() {
-    const token = braveToken.value.trim();
-    if (!token) {
-        showBraveStatus('Please enter a token', 'error');
-        return;
-    }
-    braveTestBtn.disabled = true;
-    braveTestBtn.textContent = 'Testing...';
-    Android.testBraveApi(token);
-}
-
-window.onBraveTestResult = function(success) {
-    braveTestBtn.disabled = false;
-    braveTestBtn.textContent = 'Test';
-    if (success) {
-        showBraveStatus('API token is valid!', 'success');
-        saveBraveToken();
-    } else {
-        showBraveStatus('Invalid token or API error', 'error');
-    }
-};
-
-function showBraveStatus(message, type) {
-    braveStatus.textContent = message;
-    braveStatus.className = 'brave-status ' + type;
-    braveStatus.classList.remove('hidden');
-    setTimeout(() => {
-        braveStatus.classList.add('hidden');
-    }, 3000);
-}
 
 async function sendMessage() {
     const text = chatInput.value.trim();
