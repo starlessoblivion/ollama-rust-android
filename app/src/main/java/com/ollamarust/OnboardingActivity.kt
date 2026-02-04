@@ -1,6 +1,9 @@
 package com.ollamarust
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -11,7 +14,9 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -31,6 +36,8 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var progressText: TextView
     private lateinit var actionButton: Button
     private lateinit var skipButton: Button
+    private lateinit var copyErrorButton: Button
+    private var lastError: String = ""
 
     private val prootExecutor by lazy { OllamaApp.instance.prootExecutor }
 
@@ -61,12 +68,7 @@ class OnboardingActivity : AppCompatActivity() {
             setBackgroundColor(0xFF1a1a2e.toInt())
         }
 
-        // Handle window insets for notch
-        ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(48, systemBars.top + 48, 48, systemBars.bottom + 48)
-            insets
-        }
+        // Padding will be applied after wrapping in ScrollView
 
         // Logo
         val logo = TextView(this).apply {
@@ -171,10 +173,35 @@ class OnboardingActivity : AppCompatActivity() {
         }
         container.addView(skipButton)
 
-        setContentView(container)
+        // Copy error button (hidden by default)
+        copyErrorButton = Button(this).apply {
+            text = "Copy Error"
+            textSize = 14f
+            setBackgroundColor(0x30FFFFFF)
+            setTextColor(0xFFFFFFFF.toInt())
+            visibility = View.GONE
+            setOnClickListener { copyErrorToClipboard() }
+        }
+        container.addView(copyErrorButton)
+
+        // Wrap in ScrollView for long error messages
+        val scrollView = ScrollView(this).apply {
+            setBackgroundColor(0xFF1a1a2e.toInt())
+            isFillViewport = true
+        }
+        scrollView.addView(container)
+
+        // Handle window insets for notch
+        ViewCompat.setOnApplyWindowInsetsListener(scrollView) { _, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            container.setPadding(48, systemBars.top + 48, 48, systemBars.bottom + 48)
+            insets
+        }
+
+        setContentView(scrollView)
 
         // Request insets to be applied
-        ViewCompat.requestApplyInsets(container)
+        ViewCompat.requestApplyInsets(scrollView)
     }
 
     private fun requestPermissions() {
@@ -209,6 +236,7 @@ class OnboardingActivity : AppCompatActivity() {
         actionButton.isEnabled = false
         actionButton.text = "Installing..."
         skipButton.visibility = View.GONE
+        copyErrorButton.visibility = View.GONE
 
         lifecycleScope.launch {
             try {
@@ -224,7 +252,8 @@ class OnboardingActivity : AppCompatActivity() {
                 }
 
                 if (!prootSuccess) {
-                    showError("Failed to set up Linux environment")
+                    val error = prootExecutor.lastError.ifEmpty { "Unknown error" }
+                    showError("Setup failed: $error")
                     return@launch
                 }
 
@@ -266,9 +295,11 @@ class OnboardingActivity : AppCompatActivity() {
         actionButton.text = "Start Chatting"
         actionButton.isEnabled = true
         skipButton.visibility = View.GONE
+        copyErrorButton.visibility = View.GONE
     }
 
     private fun showError(error: String) {
+        lastError = error
         titleText.text = "Setup Failed"
         subtitleText.text = "An error occurred"
         statusText.text = "Error: $error\n\nPlease check your internet connection and try again."
@@ -277,6 +308,14 @@ class OnboardingActivity : AppCompatActivity() {
         actionButton.text = "Retry"
         actionButton.isEnabled = true
         skipButton.visibility = View.VISIBLE
+        copyErrorButton.visibility = View.VISIBLE
+    }
+
+    private fun copyErrorToClipboard() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("Error", lastError)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(this, "Error copied to clipboard", Toast.LENGTH_SHORT).show()
     }
 
     private fun showRemoteServerOption() {

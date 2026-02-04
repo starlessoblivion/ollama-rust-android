@@ -7,7 +7,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.apache.commons.compress.archivers.ar.ArArchiveInputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
@@ -53,8 +57,10 @@ class ProotExecutor(private val context: Context) {
     companion object {
         private const val TAG = "ProotExecutor"
 
-        // Proot binaries from proot-portable-android-binaries
-        private const val PROOT_BASE_URL = "https://skirsten.github.io/proot-portable-android-binaries"
+        // Termux proot packages (Android-patched)
+        private const val TERMUX_PROOT_AARCH64 = "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.1.107-70_aarch64.deb"
+        private const val TERMUX_PROOT_ARM = "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.1.107-70_arm.deb"
+        private const val TERMUX_PROOT_X86_64 = "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.1.107-70_x86_64.deb"
 
         // Alpine Linux minimal rootfs with glibc compatibility
         private const val ALPINE_ROOTFS_URL = "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-minirootfs-3.19.1-aarch64.tar.gz"
@@ -70,7 +76,7 @@ class ProotExecutor(private val context: Context) {
     private val baseDir: File
         get() = File(context.filesDir, "proot")
 
-    // Use bundled proot from native libs (has exec permission)
+    // Use bundled Termux proot from native libs (has exec permission)
     private val prootBinary: File
         get() = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
 
@@ -107,7 +113,12 @@ class ProotExecutor(private val context: Context) {
     }
 
     private fun getProotUrl(): String {
-        return "$PROOT_BASE_URL/${getArchitecture()}/proot"
+        return when (getArchitecture()) {
+            "aarch64" -> TERMUX_PROOT_AARCH64
+            "armv7" -> TERMUX_PROOT_ARM
+            "x86_64" -> TERMUX_PROOT_X86_64
+            else -> TERMUX_PROOT_AARCH64
+        }
     }
 
     private fun getRootfsUrl(): String {
@@ -119,6 +130,9 @@ class ProotExecutor(private val context: Context) {
         }
     }
 
+    private val libDir: File
+        get() = File(baseDir, "lib")
+
     suspend fun setup(onProgress: (Int, String) -> Unit): Boolean {
         return withContext(Dispatchers.IO) {
             try {
@@ -126,25 +140,45 @@ class ProotExecutor(private val context: Context) {
                 baseDir.mkdirs()
                 tmpDir.mkdirs()
                 rootfsDir.mkdirs()
+                libDir.mkdirs()
 
-                // Proot is now bundled in the APK as a native library
-                // Verify it exists
+                // Verify bundled proot exists (Termux version with Android patches)
                 if (!prootBinary.exists()) {
-                    Log.e(TAG, "Bundled proot not found at: ${prootBinary.absolutePath}")
+                    lastError = "Proot not bundled in APK"
+                    Log.e(TAG, "Proot not found at: ${prootBinary.absolutePath}")
                     return@withContext false
                 }
+
+                // Copy libtalloc with correct versioned name (Android strips version from .so files)
+                val tallocSrc = File(context.applicationInfo.nativeLibraryDir, "libtalloc.so")
+                val tallocDst = File(libDir, "libtalloc.so.2")
+                if (tallocSrc.exists() && !tallocDst.exists()) {
+                    tallocSrc.copyTo(tallocDst, overwrite = true)
+                    Log.d(TAG, "Copied libtalloc to: ${tallocDst.absolutePath}")
+                }
+
+                // Copy proot loader
+                val loaderSrc = File(context.applicationInfo.nativeLibraryDir, "libproot-loader.so")
+                val loaderDst = File(libDir, "loader")
+                if (loaderSrc.exists() && !loaderDst.exists()) {
+                    loaderSrc.copyTo(loaderDst, overwrite = true)
+                    loaderDst.setExecutable(true, false)
+                    Log.d(TAG, "Copied proot loader to: ${loaderDst.absolutePath}")
+                }
+
                 Log.d(TAG, "Using bundled proot: ${prootBinary.absolutePath}, size: ${prootBinary.length()}")
+                onProgress(5, "Proot ready...")
 
                 // Download and extract rootfs if needed
                 if (!File(rootfsDir, "bin/sh").exists()) {
-                    onProgress(20, "Downloading Linux environment...")
+                    onProgress(10, "Downloading Linux environment...")
                     val rootfsTar = File(baseDir, "rootfs.tar.gz")
                     downloadFile(getRootfsUrl(), rootfsTar) { progress ->
                         val speedInfo = if (progress.currentSpeedBps > 0) {
                             " (${progress.currentSpeedFormatted})"
                         } else ""
                         val sizeInfo = "${progress.downloadedFormatted} / ${progress.totalFormatted}"
-                        onProgress(20 + (progress.percent * 0.3).toInt(), "Downloading Linux environment...\n$sizeInfo$speedInfo")
+                        onProgress(10 + (progress.percent * 0.4).toInt(), "Downloading Linux environment...\n$sizeInfo$speedInfo")
                     }
 
                     onProgress(50, "Extracting Linux environment...")
@@ -163,7 +197,8 @@ class ProotExecutor(private val context: Context) {
                 onProgress(100, "Environment ready")
                 true
             } catch (e: Exception) {
-                Log.e(TAG, "Setup failed", e)
+                Log.e(TAG, "Setup failed: ${e.message}", e)
+                lastError = e.message ?: "Setup failed"
                 false
             }
         }
@@ -180,9 +215,17 @@ class ProotExecutor(private val context: Context) {
 
     private suspend fun installGlibcCompat(onProgress: (Int, String) -> Unit) {
         // Run apk to install gcompat (glibc compatibility layer for Alpine)
-        exec("apk", "update")
+        onProgress(65, "Updating package list...")
+        val (updateCode, updateOut) = exec("apk", "update")
+        Log.d(TAG, "apk update: code=$updateCode, output=$updateOut")
+
         onProgress(70, "Installing glibc compatibility...")
-        exec("apk", "add", "gcompat", "libstdc++", "curl")
+        val (installCode, installOut) = exec("apk", "add", "gcompat", "libstdc++", "curl")
+        Log.d(TAG, "apk add: code=$installCode, output=$installOut")
+
+        if (installCode != 0) {
+            throw Exception("Failed to install packages: $installOut")
+        }
     }
 
     suspend fun installOllama(onProgress: (Int, String) -> Unit): Boolean {
@@ -249,22 +292,67 @@ class ProotExecutor(private val context: Context) {
         }
     }
 
+    private fun extractProotFromDeb(debFile: File, outputFile: File) {
+        // .deb is an ar archive containing data.tar.xz
+        ArArchiveInputStream(BufferedInputStream(FileInputStream(debFile))).use { arIn ->
+            var arEntry = arIn.nextEntry
+            while (arEntry != null) {
+                if (arEntry.name.startsWith("data.tar")) {
+                    // Extract proot from the data tarball
+                    val tarIn = if (arEntry.name.endsWith(".xz")) {
+                        org.apache.commons.compress.archivers.tar.TarArchiveInputStream(
+                            XZCompressorInputStream(arIn)
+                        )
+                    } else if (arEntry.name.endsWith(".gz")) {
+                        org.apache.commons.compress.archivers.tar.TarArchiveInputStream(
+                            GZIPInputStream(arIn)
+                        )
+                    } else {
+                        org.apache.commons.compress.archivers.tar.TarArchiveInputStream(arIn)
+                    }
+
+                    var tarEntry = tarIn.nextEntry
+                    while (tarEntry != null) {
+                        // Look for the proot binary (usually in data/data/com.termux/files/usr/bin/proot)
+                        if (tarEntry.name.endsWith("/proot") && !tarEntry.isDirectory) {
+                            outputFile.parentFile?.mkdirs()
+                            FileOutputStream(outputFile).use { output ->
+                                tarIn.copyTo(output)
+                            }
+                            outputFile.setExecutable(true, false)
+                            Log.d(TAG, "Extracted proot from ${tarEntry.name}")
+                            return
+                        }
+                        tarEntry = tarIn.nextEntry
+                    }
+                }
+                arEntry = arIn.nextEntry
+            }
+        }
+        throw Exception("proot binary not found in deb package")
+    }
+
     suspend fun exec(vararg command: String): Pair<Int, String> {
         return withContext(Dispatchers.IO) {
             try {
                 val prootCommand = mutableListOf(
                     prootBinary.absolutePath,
                     "-0",  // Fake root
+                    "--link2symlink",  // Handle hard links
                     "-r", rootfsDir.absolutePath,
                     "-b", "/dev",
                     "-b", "/proc",
                     "-b", "/sys",
+                    "-b", "${context.applicationInfo.nativeLibraryDir}:/android-lib",
                     "-w", "/root",
                     "/bin/sh", "-c", command.joinToString(" ")
                 )
 
                 val env = mapOf(
                     "PROOT_TMP_DIR" to tmpDir.absolutePath,
+                    "PROOT_NO_SECCOMP" to "1",
+                    "PROOT_LOADER" to File(libDir, "loader").absolutePath,
+                    "LD_LIBRARY_PATH" to libDir.absolutePath,
                     "HOME" to "/root",
                     "PATH" to "/usr/local/bin:/usr/bin:/bin",
                     "LANG" to "C.UTF-8"
@@ -363,6 +451,9 @@ class ProotExecutor(private val context: Context) {
 
             val env = arrayOf(
                 "PROOT_TMP_DIR=${tmpDir.absolutePath}",
+                "PROOT_NO_SECCOMP=1",
+                "PROOT_LOADER=${File(libDir, "loader").absolutePath}",
+                "LD_LIBRARY_PATH=${libDir.absolutePath}",
                 "HOME=/root",
                 "PATH=/usr/local/bin:/usr/bin:/bin",
                 "OLLAMA_HOST=127.0.0.1:11434",

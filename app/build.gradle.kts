@@ -37,6 +37,12 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {
@@ -51,4 +57,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.apache.commons:commons-compress:1.26.0")
+    implementation("org.tukaani:xz:1.9")
 }
