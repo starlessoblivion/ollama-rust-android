@@ -74,7 +74,7 @@ class SetupActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun runTermuxSetup() {
-            TermuxHelper.runSetupCommands(this@SetupActivity)
+            TermuxHelper.installOllamaWithCurl(this@SetupActivity)
         }
 
         @JavascriptInterface
@@ -96,7 +96,7 @@ class SetupActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun startOllama() {
-            TermuxHelper.startOllama(this@SetupActivity)
+            TermuxHelper.startOllamaServe(this@SetupActivity)
             // Check after a delay
             lifecycleScope.launch {
                 delay(3000)

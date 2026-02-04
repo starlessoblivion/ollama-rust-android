@@ -75,7 +75,7 @@ class OllamaRunner(private val context: Context) {
                 ollamaProcess = processBuilder.start()
 
                 // Read output in background thread
-                Thread {
+                val outputThread = Thread {
                     try {
                         BufferedReader(InputStreamReader(ollamaProcess!!.inputStream)).use { reader ->
                             var line: String?
@@ -86,7 +86,21 @@ class OllamaRunner(private val context: Context) {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error reading Ollama output", e)
                     }
-                }.start()
+                }
+                outputThread.start()
+
+                // Check if process exited immediately (binary incompatibility)
+                delay(500)
+                try {
+                    val exitCode = ollamaProcess?.exitValue()
+                    // If we get here, process has already exited
+                    Log.e(TAG, "Ollama process exited immediately with code: $exitCode")
+                    Log.e(TAG, "Linux binaries cannot run directly on Android. Use Termux or a remote server.")
+                    return@withContext false
+                } catch (e: IllegalThreadStateException) {
+                    // Process is still running, this is good
+                    Log.d(TAG, "Ollama process is running")
+                }
 
                 // Wait for server to start
                 var attempts = 0
@@ -95,6 +109,14 @@ class OllamaRunner(private val context: Context) {
                     if (checkServerRunning()) {
                         Log.d(TAG, "Ollama server started successfully")
                         return@withContext true
+                    }
+                    // Check if process died
+                    try {
+                        ollamaProcess?.exitValue()
+                        Log.e(TAG, "Ollama process died unexpectedly")
+                        return@withContext false
+                    } catch (e: IllegalThreadStateException) {
+                        // Still running, continue waiting
                     }
                     attempts++
                 }

@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Termux permission for running commands in background -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
 
     <application
         android:name=".OllamaApp"

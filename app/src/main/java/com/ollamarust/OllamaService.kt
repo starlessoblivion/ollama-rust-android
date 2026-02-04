@@ -50,31 +50,46 @@ class OllamaService : Service() {
 
     private fun startOllama() {
         serviceScope.launch {
-            val runner = OllamaApp.instance.ollamaRunner
-
             // Check if using remote server
             if (OllamaApp.instance.isUsingRemoteServer()) {
                 updateNotification("Using remote server")
                 return@launch
             }
 
-            // Start local Ollama
-            val success = runner.start()
+            // Use Termux to run Ollama (required on Android)
+            if (!TermuxHelper.isTermuxInstalled(this@OllamaService)) {
+                updateNotification("Termux not installed")
+                return@launch
+            }
+
+            updateNotification("Starting via Termux...")
+
+            val success = TermuxHelper.startOllamaServe(this@OllamaService)
 
             if (success) {
-                updateNotification("Running")
-            } else {
-                updateNotification("Failed to start")
-                // Try using Termux as fallback
-                if (TermuxHelper.isTermuxInstalled(this@OllamaService)) {
-                    TermuxHelper.startOllama(this@OllamaService)
-                    updateNotification("Running (via Termux)")
+                // Wait for server to be ready
+                var attempts = 0
+                while (attempts < 30) {
+                    kotlinx.coroutines.delay(1000)
+                    if (OllamaApp.instance.ollamaRunner.checkServerRunning()) {
+                        updateNotification("Running")
+                        return@launch
+                    }
+                    attempts++
                 }
+                updateNotification("Starting (check Termux)")
+            } else {
+                updateNotification("Failed - check Termux permissions")
             }
         }
     }
 
     private fun stopOllama() {
+        // Stop via Termux
+        if (TermuxHelper.isTermuxInstalled(this)) {
+            TermuxHelper.stopOllamaServe(this)
+        }
+        // Also try stopping any direct process (legacy)
         OllamaApp.instance.ollamaRunner.stop()
     }
 

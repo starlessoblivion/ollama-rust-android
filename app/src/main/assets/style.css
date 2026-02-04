@@ -273,6 +273,7 @@ body {
     background-color: var(--bg-header);
     color: var(--text-header);
     padding: 0.5rem 0.75rem;
+    padding-top: max(0.5rem, env(safe-area-inset-top));
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
