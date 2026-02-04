@@ -183,15 +183,11 @@ function closeAllMenus() {
     modelMenu.classList.add('hidden');
     modelsPanel.classList.add('hidden');
     statusMenu.classList.add('hidden');
-    braveSubmenu.classList.add('hidden');
     menuBackdrop.classList.add('hidden');
 }
 
 function setTheme(theme) {
     document.body.dataset.theme = theme;
-    document.querySelectorAll('.theme-option').forEach(opt => {
-        opt.classList.toggle('active', opt.dataset.theme === theme);
-    });
 }
 
 function checkOllamaStatus() {
