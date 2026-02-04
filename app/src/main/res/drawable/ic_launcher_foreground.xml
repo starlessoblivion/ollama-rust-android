@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Ollama-style llama head icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,24c-16.5,0 -30,13.5 -30,30c0,16.5 13.5,30 30,30c16.5,0 30,-13.5 30,-30C84,37.5 70.5,24 54,24zM54,78c-13.2,0 -24,-10.8 -24,-24c0,-13.2 10.8,-24 24,-24c13.2,0 24,10.8 24,24C78,67.2 67.2,78 54,78z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,48c0,2.2 -1.8,4 -4,4s-4,-1.8 -4,-4s1.8,-4 4,-4S45,45.8 45,48z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M71,48c0,2.2 -1.8,4 -4,4s-4,-1.8 -4,-4s1.8,-4 4,-4S71,45.8 71,48z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,70c-6.6,0 -12,-3.6 -12,-8h24C66,66.4 60.6,70 54,70z"/>
+</vector>

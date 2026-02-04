@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ollama Setup</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+        }
+
+        .setup-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .logo-icon {
+            font-size: 4rem;
+            margin-bottom: 0.5rem;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: rgba(255, 255, 255, 0.7);
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        .step-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .step-number {
+            background: #4a9eff;
+            color: #fff;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        .step-content {
+            color: rgba(255, 255, 255, 0.85);
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        .step-content p {
+            margin-bottom: 0.75rem;
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 0.875rem 1.25rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 0.75rem;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4a9eff 0%, #0066cc 100%);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(74, 158, 255, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+            color: #fff;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-box {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+        }
+
+        .status-item:not(:last-child) {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .status-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+        }
+
+        .status-icon.pending {
+            background: #f1c40f;
+            color: #000;
+        }
+
+        .status-icon.success {
+            background: #2ecc71;
+            color: #fff;
+        }
+
+        .status-icon.error {
+            background: #e74c3c;
+            color: #fff;
+        }
+
+        .status-icon.loading {
+            background: #3498db;
+            color: #fff;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .input-group {
+            margin-bottom: 1rem;
+        }
+
+        .input-label {
+            display: block;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            color: #fff;
+            font-family: inherit;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
+
+        .input-field::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .instructions {
+            background: rgba(74, 158, 255, 0.15);
+            border-left: 3px solid #4a9eff;
+            padding: 1rem;
+            border-radius: 0 10px 10px 0;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .instructions ol {
+            margin-left: 1.25rem;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .instructions li {
+            margin-bottom: 0.5rem;
+        }
+
+        .instructions code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+        }
+
+        .skip-link {
+            display: block;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.85rem;
+            margin-top: 1rem;
+            cursor: pointer;
+        }
+
+        .skip-link:hover {
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .progress-dots {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .progress-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transition: all 0.3s;
+        }
+
+        .progress-dot.active {
+            background: #4a9eff;
+            transform: scale(1.2);
+        }
+
+        .progress-dot.done {
+            background: #2ecc71;
+        }
+    </style>
+</head>
+<body>
+    <div class="setup-container">
+        <div class="logo">
+            <div class="logo-icon">🦙</div>
+            <h1>Ollama Setup</h1>
+            <p class="subtitle">Run AI models locally on your Android device</p>
+        </div>
+
+        <!-- Step 1: Welcome -->
+        <div class="step active" id="step1">
+            <div class="step-title">
+                <span class="step-number">1</span>
+                <span>Welcome</span>
+            </div>
+            <div class="step-content">
+                <p>Ollama requires Termux to run AI models locally on your device.</p>
+                <p>This setup will guide you through the installation process.</p>
+            </div>
+            <button class="btn btn-primary" onclick="nextStep()">Get Started</button>
+            <span class="skip-link" onclick="skipSetup()">Use remote server instead →</span>
+        </div>
+
+        <!-- Step 2: Install Termux -->
+        <div class="step" id="step2">
+            <div class="step-title">
+                <span class="step-number">2</span>
+                <span>Install Termux</span>
+            </div>
+            <div class="status-box">
+                <div class="status-item">
+                    <span class="status-label">
+                        <span class="status-icon" id="termux-status">?</span>
+                        <span>Termux</span>
+                    </span>
+                    <span id="termux-status-text">Checking...</span>
+                </div>
+            </div>
+            <div class="step-content" id="termux-instructions">
+                <p>Checking if Termux is installed...</p>
+            </div>
+            <button class="btn btn-primary" id="termux-btn" onclick="installTermux()">Install from F-Droid</button>
+            <button class="btn btn-secondary" onclick="checkTermux()">Check Again</button>
+            <button class="btn btn-secondary" onclick="prevStep()">Back</button>
+        </div>
+
+        <!-- Step 3: Setup Ollama -->
+        <div class="step" id="step3">
+            <div class="step-title">
+                <span class="step-number">3</span>
+                <span>Install Ollama</span>
+            </div>
+            <div class="step-content">
+                <p>Open Termux and run these commands to install Ollama:</p>
+            </div>
+            <div class="instructions">
+                <ol>
+                    <li>Open Termux app</li>
+                    <li>Run: <code>pkg update && pkg upgrade</code></li>
+                    <li>Run: <code>pkg install curl</code></li>
+                    <li>Run: <code>curl -fsSL https://ollama.com/install.sh | sh</code></li>
+                    <li>Start server: <code>ollama serve</code></li>
+                </ol>
+            </div>
+            <button class="btn btn-primary" onclick="openTermux()">Open Termux</button>
+            <button class="btn btn-secondary" onclick="checkOllama()">Check Connection</button>
+            <button class="btn btn-secondary" onclick="prevStep()">Back</button>
+        </div>
+
+        <!-- Step 4: Complete -->
+        <div class="step" id="step4">
+            <div class="step-title">
+                <span class="step-number">4</span>
+                <span>Ready!</span>
+            </div>
+            <div class="status-box">
+                <div class="status-item">
+                    <span class="status-label">
+                        <span class="status-icon" id="ollama-status">?</span>
+                        <span>Ollama Server</span>
+                    </span>
+                    <span id="ollama-status-text">Checking...</span>
+                </div>
+            </div>
+            <div class="step-content" id="final-message">
+                <p>Checking connection to Ollama...</p>
+            </div>
+            <button class="btn btn-success" id="complete-btn" onclick="completeSetup()" disabled>Complete Setup</button>
+            <button class="btn btn-secondary" onclick="checkOllama()">Refresh</button>
+            <button class="btn btn-secondary" onclick="prevStep()">Back</button>
+        </div>
+
+        <!-- Remote Server Option -->
+        <div class="step" id="step-remote">
+            <div class="step-title">
+                <span class="step-number">⚙</span>
+                <span>Remote Server</span>
+            </div>
+            <div class="step-content">
+                <p>Connect to a remote Ollama server instead of running locally.</p>
+            </div>
+            <div class="input-group">
+                <label class="input-label">Ollama Server URL</label>
+                <input type="url" class="input-field" id="remote-host" placeholder="http://192.168.1.100:11434" value="">
+            </div>
+            <button class="btn btn-primary" onclick="testRemote()">Test Connection</button>
+            <button class="btn btn-success" id="remote-complete-btn" onclick="completeRemote()" disabled>Use This Server</button>
+            <button class="btn btn-secondary" onclick="showStep('step1')">Back to Local Setup</button>
+        </div>
+
+        <div class="progress-dots">
+            <span class="progress-dot active" data-step="1"></span>
+            <span class="progress-dot" data-step="2"></span>
+            <span class="progress-dot" data-step="3"></span>
+            <span class="progress-dot" data-step="4"></span>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+
+        function showStep(stepId) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById(stepId).classList.add('active');
+
+            // Update progress dots
+            const stepNum = parseInt(stepId.replace('step', '')) || 0;
+            document.querySelectorAll('.progress-dot').forEach((dot, i) => {
+                dot.classList.remove('active', 'done');
+                if (i + 1 < stepNum) dot.classList.add('done');
+                if (i + 1 === stepNum) dot.classList.add('active');
+            });
+        }
+
+        function nextStep() {
+            currentStep++;
+            showStep('step' + currentStep);
+            if (currentStep === 2) checkTermux();
+            if (currentStep === 4) checkOllama();
+        }
+
+        function prevStep() {
+            currentStep--;
+            showStep('step' + currentStep);
+        }
+
+        function checkTermux() {
+            const statusIcon = document.getElementById('termux-status');
+            const statusText = document.getElementById('termux-status-text');
+            const instructions = document.getElementById('termux-instructions');
+            const btn = document.getElementById('termux-btn');
+
+            statusIcon.className = 'status-icon loading';
+            statusIcon.textContent = '...';
+            statusText.textContent = 'Checking...';
+
+            try {
+                const installed = Android.checkTermuxInstalled();
+                if (installed) {
+                    statusIcon.className = 'status-icon success';
+                    statusIcon.textContent = '✓';
+                    statusText.textContent = 'Installed';
+                    instructions.innerHTML = '<p>Termux is installed! Continue to the next step.</p>';
+                    btn.textContent = 'Continue';
+                    btn.onclick = nextStep;
+                } else {
+                    statusIcon.className = 'status-icon error';
+                    statusIcon.textContent = '✗';
+                    statusText.textContent = 'Not installed';
+                    instructions.innerHTML = '<p>Termux is required but not installed. Please install it from F-Droid (not Google Play).</p>';
+                    btn.textContent = 'Install from F-Droid';
+                    btn.onclick = installTermux;
+                }
+            } catch (e) {
+                statusIcon.className = 'status-icon error';
+                statusIcon.textContent = '!';
+                statusText.textContent = 'Error';
+            }
+        }
+
+        function installTermux() {
+            Android.installTermux();
+        }
+
+        function openTermux() {
+            Android.openTermux();
+        }
+
+        function checkOllama() {
+            const statusIcon = document.getElementById('ollama-status');
+            const statusText = document.getElementById('ollama-status-text');
+            const message = document.getElementById('final-message');
+            const btn = document.getElementById('complete-btn');
+
+            statusIcon.className = 'status-icon loading';
+            statusIcon.textContent = '...';
+            statusText.textContent = 'Connecting...';
+
+            Android.checkOllamaInstalled();
+        }
+
+        window.onOllamaCheck = function(connected) {
+            const statusIcon = document.getElementById('ollama-status');
+            const statusText = document.getElementById('ollama-status-text');
+            const message = document.getElementById('final-message');
+            const btn = document.getElementById('complete-btn');
+
+            if (connected) {
+                statusIcon.className = 'status-icon success';
+                statusIcon.textContent = '✓';
+                statusText.textContent = 'Connected';
+                message.innerHTML = '<p>🎉 Ollama is running! You\'re all set to use AI models on your device.</p>';
+                btn.disabled = false;
+            } else {
+                statusIcon.className = 'status-icon error';
+                statusIcon.textContent = '✗';
+                statusText.textContent = 'Not running';
+                message.innerHTML = '<p>Ollama server is not running. Make sure you ran <code>ollama serve</code> in Termux.</p>';
+                btn.disabled = true;
+            }
+        };
+
+        function skipSetup() {
+            showStep('step-remote');
+            const host = Android.getOllamaHost();
+            if (host && host !== 'http://localhost:11434') {
+                document.getElementById('remote-host').value = host;
+            }
+        }
+
+        function testRemote() {
+            const host = document.getElementById('remote-host').value.trim();
+            if (!host) {
+                alert('Please enter a server URL');
+                return;
+            }
+            Android.setOllamaHost(host);
+            Android.checkOllamaInstalled();
+
+            // Also handle for remote
+            const oldHandler = window.onOllamaCheck;
+            window.onOllamaCheck = function(connected) {
+                const btn = document.getElementById('remote-complete-btn');
+                if (connected) {
+                    alert('Connection successful!');
+                    btn.disabled = false;
+                } else {
+                    alert('Could not connect to server. Make sure Ollama is running and the URL is correct.');
+                    btn.disabled = true;
+                }
+                window.onOllamaCheck = oldHandler;
+            };
+        }
+
+        function completeRemote() {
+            const host = document.getElementById('remote-host').value.trim();
+            Android.setOllamaHost(host);
+            Android.completeSetup();
+        }
+
+        function completeSetup() {
+            Android.completeSetup();
+        }
+    </script>
+</body>
+</html>
