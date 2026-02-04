@@ -13,6 +13,38 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
 
 /**
+ * Download progress info with speed tracking
+ */
+data class DownloadProgress(
+    val percent: Int,
+    val downloadedBytes: Long,
+    val totalBytes: Long,
+    val currentSpeedBps: Long,
+    val averageSpeedBps: Long
+) {
+    fun formatSpeed(bps: Long): String {
+        return when {
+            bps >= 1_000_000 -> String.format("%.1f MB/s", bps / 1_000_000.0)
+            bps >= 1_000 -> String.format("%.0f KB/s", bps / 1_000.0)
+            else -> "$bps B/s"
+        }
+    }
+
+    fun formatSize(bytes: Long): String {
+        return when {
+            bytes >= 1_000_000 -> String.format("%.1f MB", bytes / 1_000_000.0)
+            bytes >= 1_000 -> String.format("%.0f KB", bytes / 1_000.0)
+            else -> "$bytes B"
+        }
+    }
+
+    val currentSpeedFormatted: String get() = formatSpeed(currentSpeedBps)
+    val averageSpeedFormatted: String get() = formatSpeed(averageSpeedBps)
+    val downloadedFormatted: String get() = formatSize(downloadedBytes)
+    val totalFormatted: String get() = formatSize(totalBytes)
+}
+
+/**
  * Handles proot setup and execution for running Linux binaries on Android.
  * This allows running glibc-based binaries (like ollama) without Termux.
  */
@@ -98,7 +130,10 @@ class ProotExecutor(private val context: Context) {
                 if (!prootBinary.exists()) {
                     onProgress(5, "Downloading proot...")
                     downloadFile(getProotUrl(), prootBinary) { progress ->
-                        onProgress(5 + (progress * 0.15).toInt(), "Downloading proot...")
+                        val speedInfo = if (progress.currentSpeedBps > 0) {
+                            " (${progress.currentSpeedFormatted})"
+                        } else ""
+                        onProgress(5 + (progress.percent * 0.15).toInt(), "Downloading proot...$speedInfo")
                     }
                     prootBinary.setExecutable(true, false)
                 }
@@ -108,7 +143,11 @@ class ProotExecutor(private val context: Context) {
                     onProgress(20, "Downloading Linux environment...")
                     val rootfsTar = File(baseDir, "rootfs.tar.gz")
                     downloadFile(getRootfsUrl(), rootfsTar) { progress ->
-                        onProgress(20 + (progress * 0.3).toInt(), "Downloading Linux environment...")
+                        val speedInfo = if (progress.currentSpeedBps > 0) {
+                            " (${progress.currentSpeedFormatted})"
+                        } else ""
+                        val sizeInfo = "${progress.downloadedFormatted} / ${progress.totalFormatted}"
+                        onProgress(20 + (progress.percent * 0.3).toInt(), "Downloading Linux environment...\n$sizeInfo$speedInfo")
                     }
 
                     onProgress(50, "Extracting Linux environment...")
@@ -170,7 +209,11 @@ class ProotExecutor(private val context: Context) {
                 onProgress(10, "Downloading Ollama...")
                 val ollamaTar = File(baseDir, "ollama.tgz")
                 downloadFile(ollamaUrl, ollamaTar) { progress ->
-                    onProgress(10 + (progress * 0.7).toInt(), "Downloading Ollama...")
+                    val speedInfo = if (progress.currentSpeedBps > 0) {
+                        " (${progress.currentSpeedFormatted})"
+                    } else ""
+                    val sizeInfo = "${progress.downloadedFormatted} / ${progress.totalFormatted}"
+                    onProgress(10 + (progress.percent * 0.7).toInt(), "Downloading Ollama...\n$sizeInfo$speedInfo")
                 }
 
                 onProgress(80, "Extracting Ollama...")
@@ -280,7 +323,7 @@ class ProotExecutor(private val context: Context) {
         }
     }
 
-    private suspend fun downloadFile(url: String, destination: File, onProgress: (Int) -> Unit) {
+    private suspend fun downloadFile(url: String, destination: File, onProgress: (DownloadProgress) -> Unit) {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
@@ -297,11 +340,40 @@ class ProotExecutor(private val context: Context) {
                     var totalRead = 0L
                     var read: Int
 
+                    // Speed tracking
+                    val startTime = System.currentTimeMillis()
+                    var lastUpdateTime = startTime
+                    var lastUpdateBytes = 0L
+                    var currentSpeedBps = 0L
+
                     while (source.read(buffer).also { read = it } != -1) {
                         output.write(buffer, 0, read)
                         totalRead += read
+
+                        val now = System.currentTimeMillis()
+                        val timeSinceLastUpdate = now - lastUpdateTime
+
+                        // Update speed every 500ms
+                        if (timeSinceLastUpdate >= 500) {
+                            val bytesSinceLastUpdate = totalRead - lastUpdateBytes
+                            currentSpeedBps = (bytesSinceLastUpdate * 1000) / timeSinceLastUpdate
+                            lastUpdateTime = now
+                            lastUpdateBytes = totalRead
+                        }
+
+                        // Calculate average speed
+                        val totalTime = now - startTime
+                        val averageSpeedBps = if (totalTime > 0) (totalRead * 1000) / totalTime else 0L
+
                         if (contentLength > 0) {
-                            onProgress(((totalRead * 100) / contentLength).toInt())
+                            val percent = ((totalRead * 100) / contentLength).toInt()
+                            onProgress(DownloadProgress(
+                                percent = percent,
+                                downloadedBytes = totalRead,
+                                totalBytes = contentLength,
+                                currentSpeedBps = currentSpeedBps,
+                                averageSpeedBps = averageSpeedBps
+                            ))
                         }
                     }
                 }
