@@ -2,6 +2,7 @@ package com.ollamarust
 
 import android.content.Context
 import android.os.Build
+import android.system.Os
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,8 +31,11 @@ class TermuxBootstrap(private val context: Context) {
         private const val BOOTSTRAP_ARM = "$BOOTSTRAP_BASE/bootstrap-arm.zip"
         private const val BOOTSTRAP_X86_64 = "$BOOTSTRAP_BASE/bootstrap-x86_64.zip"
 
-        // Ollama package info
-        private const val OLLAMA_PACKAGE = "ollama"
+        // Direct Ollama package URLs (skip pkg, download directly)
+        private const val TERMUX_PACKAGES = "https://packages.termux.dev/apt/termux-main"
+        private const val OLLAMA_AARCH64 = "$TERMUX_PACKAGES/pool/main/o/ollama/ollama_0.15.4_aarch64.deb"
+        private const val OLLAMA_ARM = "$TERMUX_PACKAGES/pool/main/o/ollama/ollama_0.15.4_arm.deb"
+        private const val OLLAMA_X86_64 = "$TERMUX_PACKAGES/pool/main/o/ollama/ollama_0.15.4_x86_64.deb"
     }
 
     private val client = OkHttpClient.Builder()
@@ -90,6 +94,15 @@ class TermuxBootstrap(private val context: Context) {
         }
     }
 
+    private fun getOllamaUrl(): String {
+        return when (getArchitecture()) {
+            "aarch64" -> OLLAMA_AARCH64
+            "arm" -> OLLAMA_ARM
+            "x86_64" -> OLLAMA_X86_64
+            else -> OLLAMA_AARCH64
+        }
+    }
+
     suspend fun setup(onProgress: (Int, String) -> Unit): Boolean {
         return withContext(Dispatchers.IO) {
             try {
@@ -138,23 +151,22 @@ class TermuxBootstrap(private val context: Context) {
                     return@withContext true
                 }
 
-                onProgress(0, "Updating package list...")
-                val (updateCode, updateOut) = exec("pkg", "update", "-y")
-                Log.d(TAG, "pkg update: $updateCode - $updateOut")
-
-                if (updateCode != 0) {
-                    // Try without update
-                    Log.w(TAG, "Update failed, trying direct install")
+                // Download Ollama .deb directly (skip pkg due to permission issues)
+                onProgress(0, "Downloading Ollama...")
+                val ollamaDeb = File(context.cacheDir, "ollama.deb")
+                downloadFile(getOllamaUrl(), ollamaDeb) { downloaded, total ->
+                    val percent = if (total > 0) ((downloaded * 80) / total).toInt() else 0
+                    val mb = downloaded / (1024 * 1024)
+                    onProgress(percent, "Downloading Ollama... ${mb}MB")
                 }
 
-                onProgress(30, "Installing Ollama...")
-                val (installCode, installOut) = exec("pkg", "install", "-y", OLLAMA_PACKAGE)
-                Log.d(TAG, "pkg install: $installCode - $installOut")
+                onProgress(85, "Extracting Ollama...")
+                extractDeb(ollamaDeb, prefixDir)
+                ollamaDeb.delete()
 
-                if (installCode != 0) {
-                    lastError = "Failed to install Ollama: $installOut"
-                    return@withContext false
-                }
+                // Set executable permissions
+                onProgress(95, "Setting permissions...")
+                setExecutablePermissions(binDir)
 
                 onProgress(100, "Ollama installed")
                 isOllamaInstalled()
@@ -162,6 +174,62 @@ class TermuxBootstrap(private val context: Context) {
                 Log.e(TAG, "Install failed: ${e.message}", e)
                 lastError = e.message ?: "Install failed"
                 false
+            }
+        }
+    }
+
+    private fun extractDeb(debFile: File, outputDir: File) {
+        // .deb is an ar archive containing data.tar.xz
+        java.util.zip.ZipInputStream(debFile.inputStream()).use { }  // Not a zip
+
+        // Use ar format reader
+        org.apache.commons.compress.archivers.ar.ArArchiveInputStream(
+            java.io.BufferedInputStream(java.io.FileInputStream(debFile))
+        ).use { arIn ->
+            var arEntry = arIn.nextEntry
+            while (arEntry != null) {
+                if (arEntry.name.startsWith("data.tar")) {
+                    val tarIn = when {
+                        arEntry.name.endsWith(".xz") ->
+                            org.apache.commons.compress.archivers.tar.TarArchiveInputStream(
+                                org.apache.commons.compress.compressors.xz.XZCompressorInputStream(arIn)
+                            )
+                        arEntry.name.endsWith(".gz") ->
+                            org.apache.commons.compress.archivers.tar.TarArchiveInputStream(
+                                java.util.zip.GZIPInputStream(arIn)
+                            )
+                        else ->
+                            org.apache.commons.compress.archivers.tar.TarArchiveInputStream(arIn)
+                    }
+
+                    var tarEntry = tarIn.nextEntry
+                    while (tarEntry != null) {
+                        // Remove data/data/com.termux/files/usr/ prefix
+                        var name = tarEntry.name
+                        val prefixToRemove = "data/data/com.termux/files/usr/"
+                        if (name.startsWith(prefixToRemove)) {
+                            name = name.removePrefix(prefixToRemove)
+                        }
+                        if (name.isNotEmpty() && name != "./") {
+                            val outFile = File(outputDir, name)
+                            if (tarEntry.isDirectory) {
+                                outFile.mkdirs()
+                            } else {
+                                outFile.parentFile?.mkdirs()
+                                FileOutputStream(outFile).use { output ->
+                                    tarIn.copyTo(output)
+                                }
+                                // Set executable for binaries
+                                if (name.startsWith("bin/") || name.contains("/bin/")) {
+                                    outFile.setExecutable(true, false)
+                                }
+                            }
+                        }
+                        tarEntry = tarIn.nextEntry
+                    }
+                    break
+                }
+                arEntry = arIn.nextEntry
             }
         }
     }
@@ -216,16 +284,18 @@ class TermuxBootstrap(private val context: Context) {
     suspend fun exec(vararg command: String): Pair<Int, String> {
         return withContext(Dispatchers.IO) {
             try {
-                val shell = File(binDir, "sh")
-                val fullCommand = arrayOf(
-                    shell.absolutePath,
-                    "-c",
-                    command.joinToString(" ")
-                )
-
                 val env = buildEnvironment()
+                val linker = if (Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()) {
+                    "/system/bin/linker64"
+                } else {
+                    "/system/bin/linker"
+                }
 
-                Log.d(TAG, "Exec: ${command.joinToString(" ")}")
+                // Try running through linker first
+                val shell = File(binDir, "sh").absolutePath
+                val fullCommand = arrayOf(linker, shell, "-c", command.joinToString(" "))
+
+                Log.d(TAG, "Exec via linker: ${command.joinToString(" ")}")
 
                 val process = Runtime.getRuntime().exec(fullCommand, env, homeDir)
                 val output = process.inputStream.bufferedReader().readText() +
@@ -316,21 +386,32 @@ class TermuxBootstrap(private val context: Context) {
         }
 
         symlinksFile.forEachLine { line ->
+            // Format is: target←linkpath (e.g., "dash←./bin/sh")
             val parts = line.split("←")
             if (parts.size == 2) {
-                val linkPath = File(prefixDir, parts[0].trim())
-                val targetPath = parts[1].trim()
+                val targetName = parts[0].trim()
+                val linkPath = parts[1].trim().removePrefix("./")
 
                 try {
-                    linkPath.parentFile?.mkdirs()
-                    // On Android, we can't create true symlinks without root
-                    // Instead, copy the target file or create a shell wrapper
-                    val targetFile = File(prefixDir, targetPath)
-                    if (targetFile.exists() && !linkPath.exists()) {
-                        targetFile.copyTo(linkPath, overwrite = false)
+                    val linkFile = File(prefixDir, linkPath)
+                    // Find target - could be in bin/ or same directory as link
+                    val linkDir = linkFile.parentFile
+                    var targetFile = File(linkDir, targetName)
+                    if (!targetFile.exists()) {
+                        targetFile = File(binDir, targetName)
+                    }
+                    if (!targetFile.exists()) {
+                        targetFile = File(prefixDir, targetName)
+                    }
+
+                    if (targetFile.exists() && !linkFile.exists()) {
+                        linkFile.parentFile?.mkdirs()
+                        targetFile.copyTo(linkFile, overwrite = false)
+                        linkFile.setExecutable(true, false)
+                        Log.d(TAG, "Created link: $linkPath -> $targetName")
                     }
                 } catch (e: Exception) {
-                    // Ignore symlink errors
+                    Log.w(TAG, "Failed to create link $linkPath: ${e.message}")
                 }
             }
         }
@@ -341,8 +422,14 @@ class TermuxBootstrap(private val context: Context) {
             if (file.isDirectory) {
                 setExecutablePermissions(file)
             } else {
-                file.setExecutable(true, false)
-                file.setReadable(true, false)
+                try {
+                    // Use Android Os.chmod for proper permission setting
+                    Os.chmod(file.absolutePath, 493) // 0755 in octal
+                } catch (e: Exception) {
+                    // Fallback to Java method
+                    file.setExecutable(true, false)
+                    file.setReadable(true, false)
+                }
             }
         }
     }

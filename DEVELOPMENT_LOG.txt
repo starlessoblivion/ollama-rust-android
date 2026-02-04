@@ -1,0 +1,287 @@
+================================================================================
+OLLAMA ANDROID APP - DEVELOPMENT LOG
+================================================================================
+Goal: Run Ollama locally on Android without requiring Termux app installed
+
+================================================================================
+APPROACH 1: PROOT WITH ALPINE LINUX (FAILED)
+================================================================================
+
+Concept:
+- Use proot to create a fake root environment
+- Download Alpine Linux minimal rootfs
+- Install glibc compatibility layer (gcompat)
+- Download and run official Ollama Linux binary inside proot
+
+Implementation:
+- Downloaded proot binaries from proot-portable-android-binaries
+- Downloaded Alpine Linux aarch64 rootfs
+- Set up DNS, installed gcompat via apk
+
+Problems Encountered:
+
+1. PROOT BINARY NOT FOUND
+   - Initially tried downloading proot at runtime
+   - Android blocks execution from app data directory (noexec mount)
+   - Solution: Bundle proot in jniLibs as libproot.so
+   - Result: APK extracts native libs to nativeLibraryDir which allows execution
+
+2. NATIVE LIBS NOT EXTRACTED
+   - Android modern default: keep native libs in APK, load directly
+   - We need actual file to execute, not load as library
+   - Solution: Add android:extractNativeLibs="true" to manifest
+   - Solution: Add useLegacyPackaging=true in build.gradle.kts
+   - Result: Native libs now extracted to nativeLibraryDir
+
+3. PROOT MISSING DEPENDENCY: libtalloc.so.2
+   - Termux proot requires libtalloc shared library
+   - Downloaded from Termux packages
+   - Android strips version numbers from .so files
+   - Solution: Copy libtalloc.so to app's lib dir as libtalloc.so.2 at runtime
+   - Set LD_LIBRARY_PATH to include this directory
+   - Result: libtalloc found
+
+4. PROOT MISSING LOADER
+   - Termux proot uses a separate "loader" binary for syscall interception
+   - Downloaded loader from Termux proot package
+   - Bundled as libproot-loader.so in jniLibs
+   - Set PROOT_LOADER environment variable
+   - Result: Loader found
+
+5. PROOT SYSCALL INTERCEPTION FAILS (CRITICAL BLOCKER)
+   Error: "execve("/bin/sh"): Function not implemented"
+
+   This is the fundamental failure. Proot uses ptrace to intercept syscalls,
+   but modern Android kernels restrict ptrace heavily for security.
+
+   Tried:
+   - PROOT_NO_SECCOMP=1 environment variable
+   - --link2symlink flag
+   - Different proot versions
+   - All failed with same error
+
+   Root cause: Android kernel security restrictions block proot's operation
+   This is device-specific - some devices may work, user's device does not.
+
+================================================================================
+APPROACH 2: RUN OLLAMA DIRECTLY WITHOUT PROOT (FAILED)
+================================================================================
+
+Concept:
+- Ollama is written in Go
+- Go can produce statically-linked binaries
+- Maybe Ollama Linux binary works directly on Android?
+
+Investigation:
+- Downloaded ollama-linux-arm64.tgz (1.43GB)
+- Examined binary with `file` command
+
+Result:
+- Binary is dynamically linked
+- Requires /lib/ld-linux-aarch64.so.1 (glibc dynamic linker)
+- Android uses Bionic libc, not glibc
+- Cannot run directly on Android
+
+================================================================================
+APPROACH 3: TERMUX BOOTSTRAP WITH NATIVE OLLAMA (CURRENT - IN PROGRESS)
+================================================================================
+
+Concept:
+- Termux publishes "bootstrap" archives
+- These contain pre-compiled binaries for Android (Bionic libc)
+- Termux has Ollama as a native package (compiled for Android!)
+- No proot needed - runs directly
+
+Implementation:
+- Download Termux bootstrap (~30MB zip)
+- Extract to app's files directory
+- Set up symlinks from SYMLINKS.txt
+- Use pkg to install Ollama
+- Run Ollama natively
+
+Files Created:
+- TermuxBootstrap.kt - New class to handle Termux environment
+
+Problems Encountered:
+
+1. SYMLINKS.TXT FORMAT CONFUSION
+   - Format is: target←linkpath (e.g., "dash←./bin/sh")
+   - Initially parsed backwards
+   - Fixed: bin/sh is created by copying dash binary
+
+2. SHELL NOT FOUND (error=2)
+   - bin/sh didn't exist after extraction
+   - Symlink creation was failing silently
+   - Fixed symlink parsing and creation logic
+   - Result: bin/sh now exists
+
+3. PERMISSION DENIED (error=13) - CURRENT BLOCKER
+   - Android blocks execution from app data directory
+   - Even with file.setExecutable(true), execution blocked
+   - Tried Os.chmod(path, 0755) - may help on some devices
+   - Tried running through /system/bin/linker64 - current attempt
+
+================================================================================
+ENVIRONMENT VARIABLES USED
+================================================================================
+
+For Proot:
+- PROOT_TMP_DIR - Temp directory for proot
+- PROOT_NO_SECCOMP=1 - Disable seccomp (didn't help)
+- PROOT_LOADER - Path to proot loader binary
+- LD_LIBRARY_PATH - Include dir with libtalloc.so.2
+
+For Termux:
+- HOME - User home directory
+- PREFIX - Termux prefix (/data/data/app/files/usr)
+- TMPDIR - Temp directory
+- PATH - Include PREFIX/bin
+- LD_LIBRARY_PATH - Include PREFIX/lib
+- LANG=en_US.UTF-8
+- OLLAMA_HOST=127.0.0.1:11434
+- OLLAMA_MODELS - Where to store models
+- TERMUX_PREFIX
+- ANDROID_DATA=/data
+- ANDROID_ROOT=/system
+
+================================================================================
+KEY FILES MODIFIED
+================================================================================
+
+app/src/main/java/com/ollamarust/ProotExecutor.kt
+- Handles proot-based execution (currently unused due to failures)
+- Downloads Alpine rootfs, sets up environment
+- Manages proot process lifecycle
+
+app/src/main/java/com/ollamarust/TermuxBootstrap.kt (NEW)
+- Handles Termux native execution
+- Downloads Termux bootstrap
+- Sets up symlinks
+- Manages Ollama installation via pkg
+
+app/src/main/java/com/ollamarust/OllamaApp.kt
+- Added termuxBootstrap lazy property
+
+app/src/main/java/com/ollamarust/OnboardingActivity.kt
+- Updated to use TermuxBootstrap instead of ProotExecutor
+- Added ScrollView for long error messages
+- Added copy error button
+
+app/src/main/java/com/ollamarust/OllamaService.kt
+- Updated to use TermuxBootstrap
+- Better error output capture
+
+app/src/main/AndroidManifest.xml
+- Added android:extractNativeLibs="true"
+
+app/build.gradle.kts
+- Added useLegacyPackaging=true for jniLibs
+- Added org.tukaani:xz dependency for .deb extraction
+
+app/src/main/jniLibs/
+- arm64-v8a/libproot.so - Termux proot binary
+- arm64-v8a/libproot-loader.so - Proot loader
+- arm64-v8a/libtalloc.so - Talloc library
+- (same for armeabi-v7a and x86_64)
+
+================================================================================
+WHAT WORKS
+================================================================================
+
+1. App builds and installs successfully
+2. Onboarding UI with progress tracking
+3. Download with speed display
+4. Error display with copy button
+5. Scrollable setup page
+6. Remote server mode (connects to external Ollama)
+7. Native library extraction from APK
+8. Termux bootstrap download and extraction
+9. Symlink creation from SYMLINKS.txt
+
+================================================================================
+WHAT DOESN'T WORK (YET)
+================================================================================
+
+1. Proot execution - blocked by Android kernel security
+2. Direct Ollama execution - requires glibc
+3. Termux binary execution - permission denied from app data dir
+
+================================================================================
+PROGRESS UPDATE - 2026-02-03 (continued)
+================================================================================
+
+4. LINKER APPROACH - PARTIAL SUCCESS
+   - Running binaries through /system/bin/linker64 works!
+   - Shell (dash/sh) now executes successfully
+   - Error changed from "Permission denied" to actual execution
+
+5. PKG PERMISSION DENIED
+   - Shell runs, but when it tries to execute `pkg`, permission denied
+   - pkg is also a binary that needs linker treatment
+   - All Termux binaries have this problem
+
+6. SOLUTION: SKIP PKG ENTIRELY
+   - Download Ollama .deb directly from Termux package repo
+   - URL: https://packages.termux.dev/apt/termux-main/pool/main/o/ollama/ollama_0.15.4_aarch64.deb
+   - Extract .deb (ar archive) -> data.tar.xz -> files
+   - Install directly to prefix directory
+   - No need to run pkg binary at all
+
+   Implementation:
+   - Added getOllamaUrl() for architecture-specific URLs
+   - Added extractDeb() function to extract .deb files
+   - Updated installOllama() to download and extract directly
+   - Strips "data/data/com.termux/files/usr/" prefix from paths
+
+7. DIRECT OLLAMA DOWNLOAD - FAILED
+   Error: "Failed to install Ollama"
+
+   The download or extraction of the Ollama .deb is failing.
+   Need to investigate:
+   - Is download completing?
+   - Is .deb extraction working?
+   - Is the file being placed correctly?
+   - Need better error message to diagnose
+
+================================================================================
+POTENTIAL SOLUTIONS TO TRY
+================================================================================
+
+1. Use app's native library directory for ALL executables
+   - Only place Android allows execution
+   - Would need to bundle everything in jniLibs
+   - Challenging for dynamic package installation
+
+2. Use Termux:Tasker or similar integration
+   - Require user to have Termux installed
+   - Communicate via intents
+   - Less self-contained but reliable
+
+3. Build Ollama specifically for Android
+   - Cross-compile with Android NDK
+   - CGO_ENABLED=0 for static linking
+   - Would need to maintain separate build
+
+4. Use QEMU user-mode emulation
+   - Run x86 or other arch binaries
+   - Very slow, but might work
+   - Would need to bundle QEMU
+
+5. WebAssembly approach
+   - Compile Ollama to WASM
+   - Run in embedded runtime
+   - Performance concerns
+
+================================================================================
+DEVICE INFORMATION
+================================================================================
+
+User's device:
+- Appears to be ARM64 (aarch64)
+- Android version unknown (but modern - has strict security)
+- Proot ptrace interception blocked by kernel
+- App data directory has noexec or similar restriction
+
+================================================================================
+LAST UPDATED: 2026-02-03
+================================================================================
