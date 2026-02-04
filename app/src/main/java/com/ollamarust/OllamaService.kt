@@ -48,6 +48,8 @@ class OllamaService : Service() {
         return START_STICKY
     }
 
+    private var ollamaProcess: Process? = null
+
     private fun startOllama() {
         serviceScope.launch {
             // Check if using remote server
@@ -56,17 +58,25 @@ class OllamaService : Service() {
                 return@launch
             }
 
-            // Use Termux to run Ollama (required on Android)
-            if (!TermuxHelper.isTermuxInstalled(this@OllamaService)) {
-                updateNotification("Termux not installed")
+            val proot = OllamaApp.instance.prootExecutor
+
+            // Check if proot environment is ready
+            if (!proot.isSetup()) {
+                updateNotification("Not set up - run setup first")
                 return@launch
             }
 
-            updateNotification("Starting via Termux...")
+            if (!proot.isOllamaInstalled()) {
+                updateNotification("Ollama not installed")
+                return@launch
+            }
 
-            val success = TermuxHelper.startOllamaServe(this@OllamaService)
+            updateNotification("Starting Ollama...")
 
-            if (success) {
+            // Start ollama via proot
+            ollamaProcess = proot.startOllamaServe()
+
+            if (ollamaProcess != null) {
                 // Wait for server to be ready
                 var attempts = 0
                 while (attempts < 30) {
@@ -77,19 +87,25 @@ class OllamaService : Service() {
                     }
                     attempts++
                 }
-                updateNotification("Starting (check Termux)")
+                updateNotification("Starting...")
             } else {
-                updateNotification("Failed - check Termux permissions")
+                updateNotification("Failed to start")
             }
         }
     }
 
     private fun stopOllama() {
-        // Stop via Termux
-        if (TermuxHelper.isTermuxInstalled(this)) {
-            TermuxHelper.stopOllamaServe(this)
+        ollamaProcess?.let { process ->
+            try {
+                process.destroy()
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    process.destroyForcibly()
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
         }
-        // Also try stopping any direct process (legacy)
+        ollamaProcess = null
         OllamaApp.instance.ollamaRunner.stop()
     }
 
