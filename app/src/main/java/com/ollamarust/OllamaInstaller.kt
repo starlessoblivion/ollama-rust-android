@@ -9,7 +9,8 @@ import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
-import java.util.zip.ZipInputStream
+import java.util.zip.GZIPInputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 
 class OllamaInstaller(private val context: Context) {
 
@@ -35,7 +36,7 @@ class OllamaInstaller(private val context: Context) {
 
     companion object {
         // Ollama release URLs - using portable Linux binaries
-        private const val OLLAMA_VERSION = "0.5.4"
+        private const val OLLAMA_VERSION = "0.5.3"
 
         private fun getOllamaUrl(): String {
             val arch = when {
@@ -46,18 +47,6 @@ class OllamaInstaller(private val context: Context) {
                 else -> "arm64"
             }
             return "https://github.com/ollama/ollama/releases/download/v$OLLAMA_VERSION/ollama-linux-$arch.tgz"
-        }
-
-        // Fallback to static binary if tgz doesn't work
-        private fun getOllamaBinaryUrl(): String {
-            val arch = when {
-                Build.SUPPORTED_ABIS.contains("arm64-v8a") -> "arm64"
-                Build.SUPPORTED_ABIS.contains("armeabi-v7a") -> "arm"
-                Build.SUPPORTED_ABIS.contains("x86_64") -> "amd64"
-                Build.SUPPORTED_ABIS.contains("x86") -> "386"
-                else -> "arm64"
-            }
-            return "https://github.com/ollama/ollama/releases/download/v$OLLAMA_VERSION/ollama-linux-$arch"
         }
     }
 
@@ -124,13 +113,14 @@ class OllamaInstaller(private val context: Context) {
     }
 
     private suspend fun downloadOllama(onProgress: (Int, String) -> Unit) {
-        // Try downloading the static binary directly (simpler for Android)
-        val url = getOllamaBinaryUrl()
+        val url = getOllamaUrl()
+        val tempFile = File(baseDir, "ollama.tgz")
 
         val request = Request.Builder()
             .url(url)
             .build()
 
+        // Download the .tgz file
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw Exception("Download failed: ${response.code}")
@@ -139,7 +129,7 @@ class OllamaInstaller(private val context: Context) {
             val body = response.body ?: throw Exception("Empty response")
             val contentLength = body.contentLength()
 
-            FileOutputStream(ollamaBinary).use { output ->
+            FileOutputStream(tempFile).use { output ->
                 body.source().use { source ->
                     val buffer = ByteArray(8192)
                     var totalRead = 0L
@@ -150,14 +140,49 @@ class OllamaInstaller(private val context: Context) {
                         totalRead += read
 
                         if (contentLength > 0) {
-                            val progress = ((totalRead * 70) / contentLength).toInt() + 10
+                            val progress = ((totalRead * 60) / contentLength).toInt() + 10
                             val mb = totalRead / (1024 * 1024)
                             val totalMb = contentLength / (1024 * 1024)
                             withContext(Dispatchers.Main) {
-                                onProgress(progress.coerceIn(10, 80), "Downloading: ${mb}MB / ${totalMb}MB")
+                                onProgress(progress.coerceIn(10, 70), "Downloading: ${mb}MB / ${totalMb}MB")
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Extract the .tgz file
+        withContext(Dispatchers.Main) {
+            onProgress(75, "Extracting Ollama...")
+        }
+        extractTarGz(tempFile)
+
+        // Clean up temp file
+        tempFile.delete()
+    }
+
+    private fun extractTarGz(tgzFile: File) {
+        GZIPInputStream(tgzFile.inputStream()).use { gzipIn ->
+            TarArchiveInputStream(gzipIn).use { tarIn ->
+                var entry = tarIn.nextEntry
+                while (entry != null) {
+                    val outputFile = when {
+                        entry.name == "bin/ollama" || entry.name.endsWith("/ollama") -> ollamaBinary
+                        entry.name.startsWith("lib/") -> {
+                            val libName = entry.name.substringAfterLast("/")
+                            File(libDir, libName)
+                        }
+                        else -> null
+                    }
+
+                    if (outputFile != null && !entry.isDirectory) {
+                        outputFile.parentFile?.mkdirs()
+                        FileOutputStream(outputFile).use { output ->
+                            tarIn.copyTo(output)
+                        }
+                    }
+                    entry = tarIn.nextEntry
                 }
             }
         }
